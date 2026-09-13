@@ -44,10 +44,10 @@ export function AttackSimulator({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#ff7d76]">
-            Attack laboratory
+            Optional demo
           </p>
           <h2 className="mt-1 text-xl font-semibold text-white">
-            Fraud attack simulator
+            Test the detector
           </h2>
           <p className="mt-1 text-sm text-slate-400">
             Inject deterministic transactions, then test the engine against
@@ -77,7 +77,7 @@ export function AttackSimulator({
           className="bg-[#ff5c55] text-white hover:bg-[#ff746d]"
         >
           <Sparkles />
-          Generate fraud attack
+          Add test scenario
         </Button>
         {created.length > 0 && (
           <Button
@@ -86,7 +86,7 @@ export function AttackSimulator({
             className="border-[#35d7f2]/45 bg-transparent text-[#62e6f8] hover:bg-[#35d7f2]/10 hover:text-white"
           >
             <Play />
-            Run FraudNet
+            Analyze scenario
           </Button>
         )}
       </div>
@@ -138,7 +138,7 @@ export function AttackSimulator({
           </table>
           {!attackRun && (
             <p className="mt-3 text-xs text-slate-500">
-              Transactions created. Run FraudNet to reveal computed detections.
+              Transactions created. Analyze scenario to reveal computed detections.
             </p>
           )}
         </div>

@@ -50,7 +50,7 @@ export function InvestigationPanel({
           <div>
             <p className="font-mono text-xs text-[#62e6f8]">{tx.id}</p>
             <h2 className="mt-1 text-xl font-semibold text-white">
-              Investigation detail
+              Review this transfer
             </h2>
           </div>
           <div className="text-right">
@@ -114,7 +114,7 @@ export function InvestigationPanel({
             className="flex-1 bg-[#35d7f2] text-[#031018] hover:bg-[#66e7f8]"
           >
             <Network />
-            Follow the money
+            Trace money movement
           </Button>
           <Button
             onClick={onSimulate}
@@ -123,14 +123,14 @@ export function InvestigationPanel({
             className="flex-1 border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800 hover:text-white"
           >
             <Ban />
-            Simulate intervention
+            Test a response
           </Button>
         </div>
       </div>
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
         <h3 className="flex items-center gap-2 font-semibold text-white">
           <Activity size={17} className="text-[#ff6b63]" />
-          Why was this flagged?
+          Why this needs review
         </h3>
         <p className="mt-2 text-sm text-slate-400">{risk.explanation}</p>
         <div className="mt-4 space-y-3">
@@ -161,7 +161,7 @@ export function InvestigationPanel({
         </div>
       </div>
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-        <h3 className="font-semibold text-white">Related transactions</h3>
+        <h3 className="font-semibold text-white">Related activity</h3>
         <div className="mt-3 space-y-2">
           {related.length ? (
             related.map((item) => (

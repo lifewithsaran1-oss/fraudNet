@@ -1,25 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import {
-  Activity,
-  AlertTriangle,
-  BadgeDollarSign,
-  CircleDollarSign,
-  Gauge,
-  Network,
-  ShieldAlert,
-  Users,
-} from 'lucide-react';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { useMemo, useState } from 'react';
+import { ArrowRight, ChevronLeft, Network, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -28,13 +10,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { AttackSimulator } from './attack-simulator';
 import { InvestigationPanel } from './investigation-panel';
 import { NetworkGraph } from './network-graph';
 import { RiskBadge } from './risk-badge';
-import { StatCard } from './stat-card';
 import { useFraudData } from '@/hooks/use-fraud-data';
-import { formatChartDate } from '@/lib/format';
 import { simulateIntervention, traceTransaction } from '@/lib/network';
 import type { NetworkTrace } from '@/types';
 
@@ -46,113 +25,128 @@ const money = (value: number) =>
     maximumFractionDigits: 1,
   });
 
+type Screen = 'welcome' | 'dashboard';
+
 export function FraudNetDashboard() {
   const {
     dataset,
     assessments,
-    stats,
     strongest,
-    lastAttackIds,
-    attackRun,
-    setAttackRun,
-    createAttack,
     error,
   } = useFraudData();
-  const [selectedId, setSelectedId] = useState(strongest?.id ?? '');
+  const [screen, setScreen] = useState<Screen>('welcome');
+  const [selectedId, setFocusId] = useState(strongest?.id ?? '');
   const [trace, setTrace] = useState<NetworkTrace>();
   const [interventionOpen, setInterventionOpen] = useState(false);
   const selected =
-    dataset.transactions.find((t) => t.id === selectedId) ?? strongest;
-  const suspicious = useMemo(
+    dataset.transactions.find((transaction) => transaction.id === selectedId) ??
+    strongest;
+  const reviewCases = useMemo(
     () =>
       dataset.transactions
-        .filter((t) => (assessments.get(t.id)?.score ?? 0) >= 50)
+        .filter((transaction) => (assessments.get(transaction.id)?.score ?? 0) >= 50)
         .sort(
           (a, b) =>
             (assessments.get(b.id)?.score ?? 0) -
             (assessments.get(a.id)?.score ?? 0),
-        ),
+        )
+        .slice(0, 8),
     [dataset, assessments],
   );
-  const chart = useMemo(() => {
-    const buckets = new Map<
-      string,
-      { label: string; total: number; suspicious: number }
-    >();
-    for (const tx of dataset.transactions) {
-      const date = new Date(tx.timestamp);
-      const key = date.toISOString().slice(0, 10);
-      const entry = buckets.get(key) ?? {
-        label: formatChartDate(tx.timestamp),
-        total: 0,
-        suspicious: 0,
-      };
-      entry.total++;
-      if ((assessments.get(tx.id)?.score ?? 0) >= 50) entry.suspicious++;
-      buckets.set(key, entry);
-    }
-    return [...buckets.values()];
-  }, [dataset, assessments]);
+  const focusCase = (transactionId: string) => {
+    setFocusId(transactionId);
+    setTrace(traceTransaction(dataset, assessments, transactionId, 2));
+  };
   const runTrace = () => {
-    if (selected) setTrace(traceTransaction(dataset, assessments, selected.id));
+    if (selected) setTrace(traceTransaction(dataset, assessments, selected.id, 2));
   };
   const intervention =
     selected && trace
       ? simulateIntervention(dataset, assessments, trace, selected.recipientId)
       : undefined;
+  const selectCase = (transactionId: string) => focusCase(transactionId);
+  const openDashboard = () => {
+    if (selected) focusCase(selected.id);
+    setScreen('dashboard');
+  };
 
-  useEffect(() => {
-    const context = document.modelContext;
-    if (!context?.registerTool || !strongest) return;
-    const lifecycle = new AbortController();
-    try {
-      void Promise.resolve(
-        context.registerTool(
-          {
-            name: 'start_strongest_investigation',
-            title: 'Start strongest investigation',
-            description:
-              'Select the highest-risk transaction found by FraudNet and open its investigation state.',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-              additionalProperties: false,
-            },
-            annotations: { readOnlyHint: false, untrustedContentHint: false },
-            execute: () => {
-              setSelectedId(strongest.id);
-              setTrace(undefined);
-              return {
-                transactionId: strongest.id,
-                score: assessments.get(strongest.id)?.score ?? 0,
-              };
-            },
-          },
-          { signal: lifecycle.signal },
-        ),
-      ).catch(() => undefined);
-    } catch {
-      /* WebMCP is an optional progressive enhancement. */
-    }
-    return () => lifecycle.abort();
-  }, [strongest, assessments]);
-
-  if (error)
+  if (error) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#050b14] p-6 text-slate-100">
+      <main className="grid min-h-screen place-items-center bg-[#07101c] p-6 text-slate-100">
         <div className="max-w-md rounded-xl border border-[#ff5c55]/50 bg-[#ff5c55]/10 p-6 text-center">
           <ShieldAlert className="mx-auto text-[#ff6b63]" />
-          <h1 className="mt-3 text-xl font-semibold">
-            FraudNet could not start
-          </h1>
+          <h1 className="mt-3 text-xl font-semibold">FraudNet could not start</h1>
           <p className="mt-2 text-slate-300">{error}</p>
         </div>
       </main>
     );
+  }
+
+  if (screen === 'welcome') {
+    return (
+      <main className="min-h-screen bg-[#07101c] text-slate-100">
+        <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-6 py-8 sm:px-10">
+          <header className="flex items-center justify-between">
+            {/* oxlint-disable-next-line next/no-img-element -- local brand asset avoids a Vinext next/image runtime incompatibility */}
+            <img
+              src="/logo-header.png"
+              alt="FraudNet"
+              width="160"
+              height="50"
+              className="h-10 w-[128px] object-contain object-left"
+            />
+            <span className="rounded-full border border-[#35d7f2]/30 bg-[#35d7f2]/10 px-3 py-1 text-xs font-semibold text-[#62e6f8]">
+              SYNTHETIC DEMO
+            </span>
+          </header>
+
+          <section className="my-auto py-16 sm:py-24">
+            <p className="text-sm font-semibold uppercase tracking-[.2em] text-[#62e6f8]">
+              Fraud investigation, made clear
+            </p>
+            <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-6xl">
+              Follow suspicious money movement without getting lost in the data.
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-400">
+              FraudNet highlights the transfers worth reviewing, explains the risk,
+              and lets you trace where funds moved next.
+            </p>
+            <Button
+              size="lg"
+              onClick={openDashboard}
+              className="mt-8 bg-[#35d7f2] px-6 text-[#031018] hover:bg-[#66e7f8]"
+            >
+              Open investigation dashboard
+              <ArrowRight />
+            </Button>
+          </section>
+
+          <section className="grid gap-3 border-t border-slate-800 pt-6 md:grid-cols-3">
+            {[
+              ['1', 'Pick a transfer', 'Start with the highest-priority alert.'],
+              ['2', 'Understand the risk', 'See the specific behavior that raised concern.'],
+              ['3', 'Trace the route', 'Follow connected accounts in a focused map.'],
+            ].map(([step, title, description]) => (
+              <div key={step} className="flex gap-3 rounded-lg p-3">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#35d7f2]/15 text-sm font-bold text-[#62e6f8]">
+                  {step}
+                </span>
+                <div>
+                  <h2 className="font-medium text-white">{title}</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-400">{description}</p>
+                </div>
+              </div>
+            ))}
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#050b14] text-slate-100">
-      <header className="sticky top-0 z-20 border-b border-slate-800/90 bg-[#07101c]/90 px-4 py-3 backdrop-blur-xl lg:px-7">
-        <div className="mx-auto flex max-w-[1680px] items-center justify-between gap-4">
+      <header className="sticky top-0 z-20 border-b border-slate-800 bg-[#07101c]/95 px-4 py-3 backdrop-blur-xl lg:px-7">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {/* oxlint-disable-next-line next/no-img-element -- local brand asset avoids a Vinext next/image runtime incompatibility */}
             <img
@@ -160,116 +154,55 @@ export function FraudNetDashboard() {
               alt="FraudNet"
               width="160"
               height="50"
-              className="h-9 w-[116px] shrink-0 object-contain object-left sm:h-11 sm:w-[142px]"
+              className="h-9 w-[116px] object-contain object-left"
             />
-            <span className="hidden h-6 w-px bg-[#37d9f3]/25 lg:block" />
-            <p className="hidden text-xs text-slate-500 lg:block">
-              Follow the money. Find the network.
-            </p>
+            <span className="hidden text-sm text-slate-500 sm:block">Investigation dashboard</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-[#37d9f3]/35 bg-[#37d9f3]/10 px-2.5 py-1 text-xs font-semibold text-[#62e6f8]">
-              ● DEMO DATA
-            </span>
-            <Button
-              size="sm"
-              onClick={() => {
-                if (strongest) {
-                  setSelectedId(strongest.id);
-                  setTrace(undefined);
-                  document
-                    .getElementById('investigation')
-                    ?.scrollIntoView({ behavior: 'smooth' });
-                }
-              }}
-              className="bg-[#35d7f2] text-[#031018] hover:bg-[#66e7f8]"
-            >
-              Start investigation
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setScreen('welcome')}
+            className="text-slate-300 hover:bg-slate-800 hover:text-white"
+          >
+            <ChevronLeft />
+            Help
+          </Button>
         </div>
       </header>
-      <div className="mx-auto max-w-[1680px] space-y-5 p-4 lg:p-7">
-        <section>
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[.18em] text-[#55def5]">
-                Financial intelligence overview
-              </p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-white">
-                Transaction risk command center
-              </h2>
-            </div>
-            <p className="text-xs text-slate-500">
-              Deterministic engine · seeded synthetic environment
+
+      <div className="mx-auto max-w-[1440px] space-y-5 p-4 lg:p-7">
+        <section className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.18em] text-[#55def5]">
+              Current investigation
             </p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+              A clearer view of one suspicious transfer.
+            </h1>
           </div>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-8">
-            <StatCard
-              label="Transactions"
-              value={stats.totalTransactions.toLocaleString()}
-              icon={Activity}
-            />
-            <StatCard
-              label="High risk"
-              value={stats.highRisk.toLocaleString()}
-              icon={AlertTriangle}
-              tone="amber"
-            />
-            <StatCard
-              label="Critical"
-              value={stats.criticalRisk.toLocaleString()}
-              icon={ShieldAlert}
-              tone="rose"
-            />
-            <StatCard
-              label="Total value"
-              value={money(stats.totalValue)}
-              icon={CircleDollarSign}
-            />
-            <StatCard
-              label="Suspicious value"
-              value={money(stats.suspiciousValue)}
-              icon={BadgeDollarSign}
-              tone="rose"
-            />
-            <StatCard
-              label="Accounts"
-              value={stats.accounts.toLocaleString()}
-              icon={Users}
-            />
-            <StatCard
-              label="Suspicious accounts"
-              value={stats.suspiciousAccounts.toLocaleString()}
-              icon={Gauge}
-              tone="amber"
-            />
-            <StatCard
-              label="Networks"
-              value={stats.networks.toLocaleString()}
-              icon={Network}
-              tone="rose"
-            />
-          </div>
+          <p className="text-sm text-slate-500">Select a different case when you are ready.</p>
         </section>
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,.75fr)]">
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_360px]">
           <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
-            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
               <div>
-                <h2 className="font-semibold text-white">
-                  Transaction network
+                <h2 className="flex items-center gap-2 font-semibold text-white">
+                  <Network size={18} className="text-[#62e6f8]" />
+                  The money trail
                 </h2>
-                <p className="text-xs text-slate-500">
-                  Actual transfers with computed risk signals
+                <p className="mt-1 text-sm text-slate-400">
+                  {trace
+                    ? 'Showing the route connected to your selected transfer.'
+                    : 'A focused two-step view of the selected transfer and where its funds moved next.'}
                 </p>
               </div>
-              {trace && (
-                <span className="rounded-full border border-[#35d7f2]/35 bg-[#35d7f2]/10 px-3 py-1 text-xs text-[#62e6f8]">
-                  Trace active · {trace.pathLength} hops
-                </span>
-              )}
+              <div className="flex gap-3 text-xs text-slate-400">
+                <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full bg-[#ff5c55]" />Risk signal</span>
+                <span><i className="mr-1.5 inline-block h-2 w-2 rounded-full bg-white" />Focus</span>
+              </div>
             </div>
-            <div className="h-[510px]">
+            <div className="h-[500px]">
               <NetworkGraph
                 dataset={dataset}
                 assessments={assessments}
@@ -277,133 +210,44 @@ export function FraudNetDashboard() {
                 selectedId={selected?.id}
               />
             </div>
-            {trace && (
-              <div className="grid grid-cols-2 gap-px border-t border-slate-800 bg-slate-800 md:grid-cols-5">
-                {[
-                  ['Connected accounts', trace.accountIds.length],
-                  ['Flow value', money(trace.totalValue)],
-                  ['Suspicious nodes', trace.suspiciousNodes],
-                  ['Suspicious transfers', trace.suspiciousTransactions],
-                  ['Network risk', `${trace.networkRisk}/100`],
-                ].map(([label, value]) => (
-                  <div key={label} className="bg-slate-950/80 px-4 py-3">
-                    <p className="text-xs text-slate-500">{label}</p>
-                    <p className="mt-1 font-semibold text-white">{value}</p>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-          <div className="min-w-0 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-            <h2 className="font-semibold text-white">Risk activity</h2>
-            <p className="text-xs text-slate-500">
-              Daily transactions from the generated ledger
-            </p>
-            <div className="mt-5 h-[210px] min-w-0">
-              <ResponsiveContainer
-                width="100%"
-                height="100%"
-                minWidth={0}
-                minHeight={210}
-                initialDimension={{ width: 500, height: 210 }}
-              >
-                <AreaChart data={chart}>
-                  <defs>
-                    <linearGradient id="riskFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ff5c55" stopOpacity={0.5} />
-                      <stop offset="100%" stopColor="#ff5c55" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fill: '#64748b', fontSize: 10 }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 10 }} width={28} />
-                  <Tooltip
-                    contentStyle={{
-                      background: '#0f172a',
-                      border: '1px solid #334155',
-                      borderRadius: 8,
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="total"
-                    stroke="#35d7f2"
-                    fill="transparent"
-                    strokeWidth={2}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="suspicious"
-                    stroke="#ff5c55"
-                    fill="url(#riskFill)"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+
+          <aside className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="border-b border-slate-800 pb-3">
+              <h2 className="font-semibold text-white">Review list</h2>
+              <p className="mt-1 text-sm text-slate-400">Start with the top alert or choose another.</p>
             </div>
-            <div className="mt-4 flex gap-5 text-xs text-slate-400">
-              <span>
-                <i className="mr-2 inline-block h-2 w-2 rounded-full bg-[#35d7f2]" />
-                All activity
-              </span>
-              <span>
-                <i className="mr-2 inline-block h-2 w-2 rounded-full bg-[#ff5c55]" />
-                Elevated risk
-              </span>
+            <div className="mt-3 space-y-2">
+              {reviewCases.map((transaction) => {
+                const sender = dataset.accounts.find((account) => account.id === transaction.senderId);
+                const recipient = dataset.accounts.find((account) => account.id === transaction.recipientId);
+                const risk = assessments.get(transaction.id)!;
+                return (
+                  <button
+                    key={transaction.id}
+                    onClick={() => selectCase(transaction.id)}
+                    className={`w-full rounded-lg border p-3 text-left transition ${selected?.id === transaction.id ? 'border-[#35d7f2]/60 bg-[#35d7f2]/10' : 'border-slate-800 bg-slate-950/35 hover:border-slate-600'}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-medium text-white">
+                        {sender?.name ?? transaction.senderId}
+                      </p>
+                      <RiskBadge level={risk.level} />
+                    </div>
+                    <p className="mt-1 truncate text-xs text-slate-400">
+                      to {recipient?.name ?? transaction.recipientId}
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-200">
+                      {money(transaction.amount)} <span className="ml-1 text-xs font-normal text-slate-500">Score {risk.score}/100</span>
+                    </p>
+                  </button>
+                );
+              })}
             </div>
-            <div className="mt-6 border-t border-slate-800 pt-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-white">
-                  Priority queue
-                </h3>
-                <span className="text-xs text-slate-500">
-                  {suspicious.length} detected
-                </span>
-              </div>
-              <div className="mt-3 max-h-[208px] space-y-2 overflow-y-auto pr-1">
-                {suspicious.length ? (
-                  suspicious.slice(0, 12).map((tx) => (
-                    <button
-                      key={tx.id}
-                      onClick={() => {
-                        setSelectedId(tx.id);
-                        setTrace(undefined);
-                      }}
-                      className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition ${selected?.id === tx.id ? 'border-[#35d7f2]/55 bg-[#35d7f2]/10' : 'border-slate-800 bg-slate-950/40 hover:border-[#35d7f2]/30'}`}
-                    >
-                      <div>
-                        <p className="font-mono text-xs text-slate-300">
-                          {tx.id}
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {money(tx.amount)}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <RiskBadge level={assessments.get(tx.id)!.level} />
-                        <p className="mt-1 text-xs text-slate-500">
-                          Score {assessments.get(tx.id)!.score}
-                        </p>
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    No transactions available
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
+          </aside>
         </section>
-        <section
-          id="investigation"
-          className="grid scroll-mt-20 gap-4 xl:grid-cols-[minmax(340px,.72fr)_minmax(0,1.28fr)]"
-        >
+
+        <section id="investigation" className="max-w-4xl scroll-mt-20">
           <InvestigationPanel
             dataset={dataset}
             assessments={assessments}
@@ -412,52 +256,28 @@ export function FraudNetDashboard() {
             onTrace={runTrace}
             onSimulate={() => setInterventionOpen(true)}
           />
-          <AttackSimulator
-            dataset={dataset}
-            assessments={assessments}
-            lastAttackIds={lastAttackIds}
-            attackRun={attackRun}
-            createAttack={createAttack}
-            runAttack={() => setAttackRun(true)}
-          />
         </section>
       </div>
+
       <Dialog open={interventionOpen} onOpenChange={setInterventionOpen}>
         <DialogContent className="border-slate-700 bg-slate-950 text-slate-100">
           <DialogHeader>
-            <DialogTitle>Intervention impact</DialogTitle>
+            <DialogTitle>Potential response impact</DialogTitle>
             <DialogDescription className="text-slate-400">
-              Synthetic simulation — projected effects of blocking{' '}
-              {selected?.recipientId} within the traced network. This does not
-              claim funds were actually saved.
+              Synthetic projection for blocking {selected?.recipientId} in this traced route.
             </DialogDescription>
           </DialogHeader>
           {intervention && (
             <div className="grid grid-cols-2 gap-3">
               {[
-                ['Transactions affected', intervention.transactionsAffected],
+                ['Transfers affected', intervention.transactionsAffected],
                 ['Accounts affected', intervention.accountsAffected],
-                [
-                  'Transaction value affected',
-                  money(intervention.transactionValueAffected),
-                ],
-                [
-                  'Suspicious paths disrupted',
-                  intervention.suspiciousPathsDisrupted,
-                ],
-                [
-                  'Estimated funds protected',
-                  money(intervention.estimatedFundsProtected),
-                ],
+                ['Value affected', money(intervention.transactionValueAffected)],
+                ['Suspicious paths disrupted', intervention.suspiciousPathsDisrupted],
               ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-lg border border-slate-800 bg-slate-900 p-3"
-                >
+                <div key={label} className="rounded-lg border border-slate-800 bg-slate-900 p-3">
                   <p className="text-xs text-slate-500">{label}</p>
-                  <p className="mt-1 text-lg font-semibold text-white">
-                    {value}
-                  </p>
+                  <p className="mt-1 text-lg font-semibold text-white">{value}</p>
                 </div>
               ))}
             </div>

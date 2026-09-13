@@ -2,15 +2,66 @@
 
 import {
   Background,
+  BaseEdge,
   Controls,
-  MarkerType,
-  MiniMap,
+  getBezierPath,
+  Position,
   ReactFlow,
   type Edge,
+  type EdgeProps,
   type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { Dataset, NetworkTrace, RiskAssessment } from '@/types';
+
+type TrailEdgeData = { selected: boolean; elevated: boolean };
+
+function MovingTrailEdge({
+  id,
+  sourceX,
+  sourceY,
+  sourcePosition,
+  targetX,
+  targetY,
+  targetPosition,
+  data,
+}: EdgeProps<Edge<TrailEdgeData>>) {
+  const [edgePath] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+  const selected = data?.selected ?? false;
+  const elevated = data?.elevated ?? false;
+  const stroke = selected ? '#b9c8d8' : elevated ? '#8b4652' : '#24546b';
+  const pathId = `trail-${id}`;
+
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={{
+          stroke,
+          strokeWidth: selected ? 2.25 : elevated ? 1.5 : 1.1,
+        }}
+      />
+      {selected && (
+        <path d="M -6 -4 L 6 0 L -6 4 Z" fill="#dce8f3">
+          <animateMotion dur="1.9s" repeatCount="indefinite" rotate="auto">
+            <mpath href={`#${pathId}`} />
+          </animateMotion>
+        </path>
+      )}
+      {selected && <path id={pathId} d={edgePath} fill="none" stroke="transparent" />}
+    </>
+  );
+}
+
+const edgeTypes = { trail: MovingTrailEdge };
 
 export function NetworkGraph({
   dataset,
@@ -23,83 +74,112 @@ export function NetworkGraph({
   trace?: NetworkTrace;
   selectedId?: string;
 }) {
-  const txs = trace
-    ? dataset.transactions.filter((t) => trace.transactionIds.includes(t.id))
+  const transactions = trace
+    ? dataset.transactions.filter((transaction) => trace.transactionIds.includes(transaction.id))
     : dataset.transactions
-        .filter((t) => (assessments.get(t.id)?.score ?? 0) >= 50)
-        .slice(-32);
-  const accountIds = [
-    ...new Set(txs.flatMap((t) => [t.senderId, t.recipientId])),
-  ];
-  const nodes: Node[] = accountIds.map((id, i) => {
-    const account = dataset.accounts.find((a) => a.id === id)!;
-    const suspicious = txs.some(
-      (t) =>
-        (t.senderId === id || t.recipientId === id) &&
-        (assessments.get(t.id)?.score ?? 0) >= 50,
+        .filter((transaction) => (assessments.get(transaction.id)?.score ?? 0) >= 50)
+        .sort(
+          (a, b) =>
+            (assessments.get(b.id)?.score ?? 0) -
+            (assessments.get(a.id)?.score ?? 0),
+        )
+        .slice(0, 12);
+  const selectedTransaction = transactions.find((transaction) => transaction.id === selectedId);
+  const focusedAccountIds = new Set(
+    selectedTransaction
+      ? [selectedTransaction.senderId, selectedTransaction.recipientId]
+      : [],
+  );
+  const accountIds = [...new Set(transactions.flatMap((transaction) => [transaction.senderId, transaction.recipientId]))];
+  const outgoing = new Set(transactions.map((transaction) => transaction.senderId));
+  const incoming = new Set(transactions.map((transaction) => transaction.recipientId));
+  const columns = new Map<number, string[]>();
+
+  for (const accountId of accountIds) {
+    const column = outgoing.has(accountId) && incoming.has(accountId)
+      ? 1
+      : outgoing.has(accountId)
+        ? 0
+        : 2;
+    columns.set(column, [...(columns.get(column) ?? []), accountId]);
+  }
+
+  const nodes: Node[] = accountIds.map((accountId) => {
+    const account = dataset.accounts.find((item) => item.id === accountId)!;
+    const column = outgoing.has(accountId) && incoming.has(accountId)
+      ? 1
+      : outgoing.has(accountId)
+        ? 0
+        : 2;
+    const row = (columns.get(column) ?? []).indexOf(accountId);
+    const elevated = transactions.some(
+      (transaction) =>
+        (transaction.senderId === accountId || transaction.recipientId === accountId) &&
+        (assessments.get(transaction.id)?.score ?? 0) >= 50,
     );
-    const angle = (i / Math.max(accountIds.length, 1)) * Math.PI * 2;
-    const ring = 155 + (i % 3) * 75;
+    const focused = focusedAccountIds.has(accountId);
+    const role = focused
+      ? accountId === selectedTransaction?.senderId
+        ? 'ORIGIN'
+        : 'FLAGGED TRANSFER'
+      : column === 1
+        ? 'PASS-THROUGH'
+        : column === 2
+          ? 'DESTINATION'
+          : 'SOURCE';
+
     return {
-      id,
-      position: {
-        x: 420 + Math.cos(angle) * ring,
-        y: 250 + Math.sin(angle) * ring,
-      },
-      data: { label: account.name },
+      id: accountId,
+      position: { x: 55 + column * 275, y: 55 + row * 118 },
+      data: { label: `${role}\n${account.name}` },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       style: {
-        color: '#e2e8f0',
-        background: suspicious ? '#4c0519' : '#0f2537',
-        border: `1px solid ${suspicious ? '#ff5c55' : '#35d7f2'}`,
-        borderRadius: 10,
+        color: focused ? '#0b1220' : '#e2e8f0',
+        background: focused ? '#f5f5f7' : elevated ? '#21131a' : '#0d1d2d',
+        border: `1px solid ${focused ? '#35d7f2' : elevated ? '#63313c' : '#23435b'}`,
+        borderRadius: 14,
+        boxShadow: focused ? '0 10px 30px rgba(53, 215, 242, .16)' : 'none',
         fontSize: 11,
-        width: 122,
+        fontWeight: 650,
+        lineHeight: 1.7,
+        letterSpacing: '.01em',
+        padding: '12px 14px',
+        whiteSpace: 'pre-line',
+        width: 185,
+        textAlign: 'center',
       },
     };
   });
-  const edges: Edge[] = txs.map((t) => ({
-    id: t.id,
-    source: t.senderId,
-    target: t.recipientId,
-    animated: trace?.transactionIds.includes(t.id),
-    label: t.amount.toLocaleString('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0,
-    }),
-    style: {
-      stroke:
-        t.id === selectedId
-          ? '#ffffff'
-          : (assessments.get(t.id)?.score ?? 0) >= 50
-            ? '#ff5c55'
-            : '#35d7f2',
-      strokeWidth: t.id === selectedId ? 3 : 1.5,
+
+  const edges: Edge<TrailEdgeData>[] = transactions.map((transaction) => ({
+    id: transaction.id,
+    type: 'trail',
+    source: transaction.senderId,
+    target: transaction.recipientId,
+    data: {
+      selected: transaction.id === selectedId,
+      elevated: (assessments.get(transaction.id)?.score ?? 0) >= 50,
     },
-    labelStyle: { fill: '#94a3b8', fontSize: 9 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#35d7f2' },
   }));
-  if (!txs.length)
-    return (
-      <div className="grid h-full place-items-center text-slate-400">
-        No transactions available
-      </div>
-    );
+
+  if (!transactions.length) {
+    return <div className="grid h-full place-items-center text-slate-400">No transfers available</div>;
+  }
+
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
+      edgeTypes={edgeTypes}
       fitView
-      minZoom={0.15}
-      maxZoom={2}
+      fitViewOptions={{ padding: 0.25 }}
+      minZoom={0.35}
+      maxZoom={1.5}
       proOptions={{ hideAttribution: true }}
     >
-      <Background color="#1e3a4f" gap={22} size={1} />
+      <Background color="#153046" gap={30} size={1} />
       <Controls className="!border-slate-700 !bg-slate-900 !text-white" />
-      <MiniMap
-        nodeColor={(n) => String(n.style?.background ?? '#0f2537')}
-        maskColor="rgba(2, 8, 23, .72)"
-      />
     </ReactFlow>
   );
 }
