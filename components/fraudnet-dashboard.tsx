@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, ChevronLeft, Network, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,6 +38,11 @@ export function FraudNetDashboard() {
   const [selectedId, setFocusId] = useState(strongest?.id ?? '');
   const [trace, setTrace] = useState<NetworkTrace>();
   const [interventionOpen, setInterventionOpen] = useState(false);
+  useEffect(() => {
+    if (strongest && !dataset.transactions.some((transaction) => transaction.id === selectedId)) {
+      setFocusId(strongest.id);
+    }
+  }, [dataset.transactions, selectedId, strongest]);
   const selected =
     dataset.transactions.find((transaction) => transaction.id === selectedId) ??
     strongest;
@@ -66,7 +71,6 @@ export function FraudNetDashboard() {
       : undefined;
   const selectCase = (transactionId: string) => focusCase(transactionId);
   const openDashboard = () => {
-    if (selected) focusCase(selected.id);
     setScreen('dashboard');
   };
 
